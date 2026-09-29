@@ -1,17 +1,61 @@
-# CloudFailurePredictor
+# 🚀 Task Failure Prediction using Google Cloud Trace Data  
 
-Predicts whether a job in a compute cluster will fail, from the resources it requests, and streams those predictions to a live dashboard. The model is a random forest trained on the [Google Borg cluster trace (2019)](https://github.com/google/cluster-data).
+This project predicts **task failures** using **Google Cloud Trace data**, helping optimize resource usage by identifying high-risk tasks before execution. It combines **machine learning**, **API deployment**, and **real-time dashboards** into an end-to-end cloud-based solution.  
+
+---
+
+## 📌 Features  
+
+- **Machine Learning Model**  
+  - Preprocessed the [Google Borg cluster trace (2019)](https://github.com/google/cluster-data) with feature engineering and leakage removal  
+  - Achieved **93% accuracy** and **0.93 F1 score** using a Random Forest classifier (on a random test split; see [Model](#-model) for caveats)  
+
+- **Deployment**  
+  - Model **dockerized** and deployed via **FastAPI**  
+  - REST API for predictions, with input validation and a health check  
+
+- **Interactive Dashboard**  
+  - Built with **Streamlit**  
+  - Supports CSV uploads or demo mode with preloaded data  
+  - Streams a row to the API every 3 seconds and shows the predicted vs. actual outcome  
+
+- **Real-time Messaging**  
+  - Every prediction is published to a **Redis Pub/Sub** channel so other services can consume the stream  
+
+- **Visualizations**  
+  - Task failure probabilities  
+  - CPU and memory usage  
+  - Historical failure trends  
+
+- **Cloud Hosting**  
+  - End-to-end system deployed on **Render**  
+
+---
+
+## ⚙️ Tech Stack  
+
+- **Machine Learning**: scikit-learn, pandas  
+- **API**: FastAPI, Docker  
+- **Dashboard**: Streamlit  
+- **Messaging**: Redis Pub/Sub  
+- **Hosting**: Render  
+
+---
+
+## 🏗️ Architecture
 
 ```
  dashboard (Streamlit)  ──POST /predict──▶  api (FastAPI + model)  ──PUBLISH predictions──▶  Redis (optional)
       :8501                                     :8000
 ```
 
-- **api** (`app/`) serves the model. Every prediction is also published to the Redis channel `predictions` when `REDIS_URL` is set, so other services can subscribe to the stream.
-- **dashboard** (`dashboard/`) replays rows, either from the bundled trace sample or from a CSV you upload, sends each one to the API every 3 seconds, and charts the results.
+- **api** (`app/`) serves the model. When `REDIS_URL` is set, each prediction is also published to the Redis channel `predictions`.
+- **dashboard** (`dashboard/`) replays rows from the bundled trace sample or from a CSV you upload, sends them to the API, and charts the results.
 - **notebook** (`notebook/predict.ipynb`) cleans the raw trace into `data/processed_gct.csv` and trains `models/failure_model.pkl`.
 
-## Running with Docker
+---
+
+## 🐳 Running with Docker
 
 ```sh
 docker compose up --build
@@ -19,7 +63,7 @@ docker compose up --build
 
 Then open http://localhost:8501. The API's interactive docs are at http://localhost:8000/docs.
 
-## Running locally
+## 💻 Running locally
 
 Requires Python 3.10+.
 
@@ -40,10 +84,12 @@ Run the tests with `pytest`.
 |---|---|---|---|
 | `REDIS_URL` | api | unset | Redis to publish predictions to. If unset, publishing is skipped. |
 | `MODEL_PATH` | api | `models/failure_model.pkl` | Path to the trained model. |
-| `API_URL` | dashboard | `http://localhost:8000` | Base URL of the API. |
+| `API_URL` | dashboard | `http://localhost:8000` | Base URL of the API, **without** `/predict`. |
 | `DEMO_DATA_PATH` | dashboard | `data/processed_gct.csv` | Rows replayed in demo mode. |
 
-## API
+---
+
+## 🔌 API
 
 `POST /predict`
 
@@ -57,7 +103,9 @@ returns `{"failure_probability": 0.97}`.
 
 `GET /health` returns `{"status": "ok", "redis": "ok" | "disabled" | "unreachable"}`.
 
-## Model
+---
+
+## 🧠 Model
 
 - **Features:** `cpu_request`, `memory_request`, `priority`, `scheduling_class`.
 - **Label:** a job counts as *failed* if its final event is `FAIL`, `EVICT`, `LOST` or `KILL`, and as *not failed* if it is `FINISH`.
