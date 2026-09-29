@@ -1,0 +1,25 @@
+services:
+  redis:
+    image: redis:7-alpine
+
+  api:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api

@@ -1,15 +1,14 @@
+# Build from the repo root: docker build -f dashboard/Dockerfile .
 FROM python:3.10-slim
 
-WORKDIR /dashboard
+WORKDIR /srv
 
-COPY dashboard/requirements.txt .
-COPY ../models /dashboard/models
-COPY ../data /dashboard/data
+COPY dashboard/requirements.txt dashboard/requirements.txt
+RUN pip install --no-cache-dir -r dashboard/requirements.txt
 
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY dashboard/ .
+COPY data/processed_gct.csv data/processed_gct.csv
+COPY dashboard/ dashboard/
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "dashboard.py", "--server.address=0.0.0.0", "--server.port=8501"]
+CMD ["streamlit", "run", "dashboard/dashboard.py", "--server.address=0.0.0.0", "--server.port=8501"]

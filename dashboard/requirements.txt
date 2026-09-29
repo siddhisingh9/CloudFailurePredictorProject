@@ -1,4 +1,3 @@
-streamlit
-requests
-pandas
-redis
+streamlit==1.49.0
+requests==2.32.4
+pandas==2.3.0

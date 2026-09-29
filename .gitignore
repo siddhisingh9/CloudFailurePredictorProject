@@ -21,3 +21,5 @@ venv/
 data/borg_traces_data.csv
 csvtoredis.py
 testredis.py
+# Tests
+.pytest_cache/

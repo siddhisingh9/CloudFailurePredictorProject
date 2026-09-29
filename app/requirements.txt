@@ -1,9 +1,9 @@
-fastapi
-uvicorn
-pandas
-joblib
-scikit-learn
-numpy
-pydantic
-requests
-redis
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.12.5
+redis==6.4.0
+# scikit-learn, numpy and joblib must match the versions the model was pickled with
+scikit-learn==1.7.1
+numpy==2.2.6
+joblib==1.5.1
+pandas==2.3.0

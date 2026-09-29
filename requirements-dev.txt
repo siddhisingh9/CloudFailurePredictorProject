@@ -1,0 +1,4 @@
+-r app/requirements.txt
+-r dashboard/requirements.txt
+pytest==9.1.1
+httpx2==2.13.1

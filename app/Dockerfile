@@ -1,15 +1,13 @@
+# Build from the repo root: docker build -f app/Dockerfile .
 FROM python:3.10-slim
 
-WORKDIR /app
+WORKDIR /srv
 
-COPY app/requirements.txt .
+COPY app/requirements.txt app/requirements.txt
+RUN pip install --no-cache-dir -r app/requirements.txt
 
-COPY ../models /app/models
-COPY ../data /app/data
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
+COPY models/failure_model.pkl models/failure_model.pkl
+COPY app/ app/
 
 EXPOSE 8000
 
