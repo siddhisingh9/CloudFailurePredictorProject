@@ -11,4 +11,5 @@ COPY dashboard/ dashboard/
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "dashboard/dashboard.py", "--server.address=0.0.0.0", "--server.port=8501"]
+# Render (and similar hosts) tell the app which port to use via $PORT
+CMD ["sh", "-c", "exec streamlit run dashboard/dashboard.py --server.address=0.0.0.0 --server.port=${PORT:-8501}"]
