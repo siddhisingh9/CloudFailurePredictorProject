@@ -1,55 +1,36 @@
-# 🚀 Task Failure Prediction using Google Cloud Trace Data  
+# Cloud Task Failure Prediction
 
-This project predicts **task failures** using **Google Cloud Trace data**, helping optimize resource usage by identifying high-risk tasks before execution. It combines **machine learning**, **API deployment**, **caching**, and **real-time dashboards** into an end-to-end cloud-based solution.  
+[![tests](https://github.com/siddhisingh9/CloudFailurePredictorProject/actions/workflows/tests.yml/badge.svg)](https://github.com/siddhisingh9/CloudFailurePredictorProject/actions/workflows/tests.yml)
 
----
-
-## 📌 Features  
-
-- **Machine Learning Model**  
-  - Preprocessed the [Google Borg cluster trace (2019)](https://github.com/google/cluster-data) with feature engineering and leakage removal  
-  - Random Forest classifier: **83% accuracy (0.87 F1, 0.90 ROC-AUC) on jobs with resource requests never seen in training**, against a 63% majority-class baseline, and 93% on a standard random split (see [Model](#-model))  
-
-- **Deployment**  
-  - Model **dockerized** and served via **FastAPI**  
-  - REST API with input validation, a health check and live cache statistics  
-
-- **Redis Caching**  
-  - Predictions are cached in **Redis**, keyed by the model version and the job's inputs  
-  - The trace has only ~6.5k distinct inputs across 207k jobs, so repeats are common: replaying the dataset gives a 97% hit rate, and locally a cache hit takes ~1 ms versus ~30 ms for the model  
-
-- **Real-time Streaming**  
-  - Every prediction is published to a **Redis Pub/Sub** channel  
-  - The dashboard subscribes to it and shows a live feed of every user's predictions  
-
-- **Interactive Dashboard**  
-  - Built with **Streamlit**  
-  - Supports CSV uploads or demo mode with preloaded data  
-  - Streams a row to the API every 3 seconds and shows the predicted vs. actual outcome  
-
-- **Visualizations**  
-  - Task failure probabilities  
-  - CPU and memory usage  
-  - Historical failure trends  
-  - Cache hit rate and latency  
-
-- **Cloud Hosting**  
-  - End-to-end system deployed on **Render**, running entirely on free tiers  
+Predicts whether a job in a compute cluster will fail, using only the resources it requests at submission time, so that high-risk jobs can be identified before they run. The project is an end-to-end system: a machine learning model trained on the Google Borg cluster trace, a prediction API with a Redis cache, real-time streaming over Redis Pub/Sub, and a live monitoring dashboard, deployed on free cloud tiers.
 
 ---
 
-## ⚙️ Tech Stack  
+## Highlights
 
-- **Machine Learning**: scikit-learn, pandas  
-- **API**: FastAPI, Docker  
-- **Dashboard**: Streamlit  
-- **Caching & Messaging**: Redis (cache + Pub/Sub)  
-- **Hosting**: Render  
-- **Testing**: pytest, fakeredis  
+- **Honest evaluation.** A random forest reaches **83.4% accuracy (0.87 F1, 0.90 ROC-AUC) on jobs whose resource profile never appeared in training**, against a 63.2% majority-class baseline. The standard random split reports 92.9%, but most of its test inputs also occur in training, so the project measures generalisation separately (see [Evaluation](#evaluation)).
+- **Leakage removal.** The trace's event-type columns predict the outcome with 100% accuracy on their own because they record how the job ended. The model uses only information available when a job is submitted.
+- **Redis prediction cache.** The trace has 207,762 jobs but only 6,514 distinct resource profiles, so repeat requests are common: replaying the data gives a 97% hit rate, and a cache hit takes about 1 ms locally versus about 30 ms for the model. Cache keys include a hash of the model file, so retraining invalidates old entries automatically.
+- **Real-time streaming.** Every prediction is published to a Redis Pub/Sub channel; the dashboard subscribes to it and shows a live feed of all users' predictions.
+- **Live monitoring dashboard.** Streams held-out test jobs to the API and tracks live accuracy against the real outcomes, cache hit rate and latency. Includes model performance and architecture views.
+- **Production practices.** Input validation, graceful degradation when Redis is down, health and statistics endpoints, pinned dependencies matched to the pickled model, 16 automated tests, Docker images and a docker-compose stack.
 
 ---
 
-## 🏗️ Architecture
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Machine learning | scikit-learn (random forest), imbalanced-learn (SMOTE), pandas |
+| API | FastAPI, Uvicorn, Pydantic |
+| Caching and messaging | Redis (key-value cache and Pub/Sub) |
+| Dashboard | Streamlit, Altair |
+| Packaging and hosting | Docker, docker-compose, Render |
+| Testing | pytest, fakeredis |
+
+---
+
+## Architecture
 
 ```
                        POST /predict                          GET / SET (cache)
@@ -58,15 +39,15 @@ This project predicts **task failures** using **Google Cloud Trace data**, helpi
         └──────────────────── SUBSCRIBE "predictions" (live feed) ◀─────────────────┘
 ```
 
-- **api** (`app/`) serves the model. With `REDIS_URL` set, it checks the Redis cache before running the model, stores new predictions with a 24-hour expiry, and publishes every prediction to the `predictions` channel. Cache keys include a hash of the model file, so retraining automatically invalidates old entries.
-- **dashboard** (`dashboard/`) replays rows from the bundled trace sample or from a CSV you upload, sends them to the API, and charts the results. A background thread subscribes to `predictions` for the live feed.
-- **notebook** (`notebook/`) cleans the raw trace into `data/processed_gct.csv`, trains `models/failure_model.pkl`, and re-evaluates it on unseen inputs.
+- **api** (`app/`) serves the model. With `REDIS_URL` set, it checks the Redis cache before running the model, stores new predictions with a 24-hour expiry, and publishes every prediction to the `predictions` channel.
+- **dashboard** (`dashboard/`) replays jobs from the held-out test set (or a CSV you upload), sends them to the API, and charts the results. A background thread subscribes to `predictions` for the live feed.
+- **notebook** (`notebook/`) cleans the raw trace into `data/processed_gct.csv`, trains `models/failure_model.pkl`, and evaluates it on unseen inputs (`evaluate_unseen.py`, which also writes `models/evaluation.json` and `data/demo_holdout.csv`).
 
 Redis is optional. Without it the API serves uncached predictions, and a Redis outage never fails a request.
 
 ---
 
-## 🐳 Running with Docker
+## Running with Docker
 
 ```sh
 docker compose up --build
@@ -74,7 +55,7 @@ docker compose up --build
 
 Then open http://localhost:8501. The API's interactive docs are at http://localhost:8000/docs.
 
-## 💻 Running locally
+## Running locally
 
 Requires Python 3.10+.
 
@@ -97,26 +78,29 @@ Set `REDIS_URL` in both terminals to enable caching and the live feed. Run the t
 | `CACHE_TTL_SECONDS` | api | `86400` | How long cached predictions are kept. |
 | `MODEL_PATH` | api | `models/failure_model.pkl` | Path to the trained model. |
 | `API_URL` | dashboard | `http://localhost:8000` | Base URL of the API, **without** `/predict`. |
-| `DEMO_DATA_PATH` | dashboard | `data/processed_gct.csv` | Rows replayed in demo mode. |
+| `PUBLIC_API_URL` | dashboard | `API_URL` | API address for the dashboard's documentation link, if different from `API_URL`. |
+| `DEMO_DATA_PATH` | dashboard | `data/demo_holdout.csv` | Jobs replayed in demo mode. |
 | `PORT` | both Docker images | `8000` / `8501` | Port to listen on; set automatically by Render. |
 
 ---
 
-## ☁️ Deploying on free tiers
+## Deploying on free tiers
 
 Everything fits within free plans: the API uses about 210 MB of RAM (Render's free limit is 512 MB) and the cache uses well under 1 MB of Redis.
 
-1. **Redis:** create a free database on [Redis Cloud](https://redis.io/cloud/) (30 MB) and copy its connection URL (`redis://default:<password>@<host>:<port>`). Pick the region closest to your Render services; every cache lookup is a network round trip, so a far-away Redis can be slower than the model. The dashboard's latency figures show whether the cache is paying off.
-2. **API on Render:** New → Web Service → this repo, runtime **Docker**, Dockerfile path `app/Dockerfile`, build context `.` (repo root), instance type **Free**. Set `REDIS_URL`. Health check path: `/health`.
+1. **Redis:** create a free database on [Redis Cloud](https://redis.io/cloud/) (30 MB) and copy its connection URL (`redis://default:<password>@<host>:<port>`). Pick the region closest to your Render services; every cache lookup is a network round trip, so a distant Redis can be slower than the model. The dashboard's latency figures show whether the cache is paying off.
+2. **API on Render:** New, Web Service, this repo; runtime **Docker**, Dockerfile path `app/Dockerfile`, build context `.` (repo root), instance type **Free**. Set `REDIS_URL`. Health check path: `/health`.
 3. **Dashboard**, either:
    - **on Render:** another Docker web service with Dockerfile path `dashboard/Dockerfile`, build context `.`, and environment variables `API_URL` (the API's public URL, e.g. `https://<api-name>.onrender.com`) and `REDIS_URL`; or
-   - **on [Streamlit Community Cloud](https://streamlit.io/cloud):** New app → this repo, main file `dashboard/dashboard.py`. It installs `dashboard/requirements.txt` automatically. Under Advanced settings → Secrets, add `API_URL = "https://<api-name>.onrender.com"` and `REDIS_URL = "redis://..."`; top-level secrets are exposed to the app as environment variables.
+   - **on [Streamlit Community Cloud](https://streamlit.io/cloud):** New app, this repo, main file `dashboard/dashboard.py`. It installs `dashboard/requirements.txt` and applies the theme in `.streamlit/config.toml` automatically. Under Advanced settings, Secrets, add `API_URL = "https://<api-name>.onrender.com"` and `REDIS_URL = "redis://..."`; top-level secrets are exposed to the app as environment variables.
 
-**Free-tier behaviour to expect:** Render's free services sleep after 15 minutes without traffic and take 30–60 seconds to wake. The dashboard pings the API as soon as it opens and shows a "waking up" message instead of failing while it waits. The cache statistics are kept in memory, so they reset whenever the API restarts or sleeps; cached predictions in Redis survive.
+**Free-tier behaviour to expect:** Render's free services sleep after 15 minutes without traffic and take 30 to 60 seconds to wake. The dashboard pings the API as soon as it opens and shows a "waking up" status instead of failing while it waits. Cache statistics are kept in memory, so they reset whenever the API restarts or sleeps; cached predictions in Redis survive.
 
 ---
 
-## 🔌 API
+## API
+
+Interactive documentation is served at `/docs`; the root URL redirects there.
 
 `POST /predict`
 
@@ -124,28 +108,31 @@ Everything fits within free plans: the API uses about 210 MB of RAM (Render's fr
 {"cpu_request": 0.0072, "memory_request": 0.0013, "priority": 360, "scheduling_class": 2}
 ```
 
-returns `{"failure_probability": 0.97, "cached": false}`.
+returns `{"failure_probability": 0.97, "cached": false, "latency_ms": 27.4}`.
 
-`cpu_request` and `memory_request` are normalised to the largest machine in the trace (0–1). `priority` is a non-negative integer (0–450 in the trace) and `scheduling_class` is 0–3. Invalid input gets a 422.
+`cpu_request` and `memory_request` are normalised to the largest machine in the trace (0 to 1). `priority` is a non-negative integer (0 to 450 in the trace) and `scheduling_class` is 0 to 3. Invalid input gets a 422.
 
-`GET /health` returns `{"status": "ok", "redis": "ok" | "disabled" | "unreachable", "model_version": "058e4618e0ff"}`.
+| Endpoint | Returns |
+|---|---|
+| `GET /health` | `{"status": "ok", "redis": "ok" \| "disabled" \| "unreachable", "model_version": "058e4618e0ff"}` |
+| `GET /stats` | Cache hit rate and average latency of cache hits and misses since the API started |
+| `GET /model` | Model version, feature importances and the evaluation results from `models/evaluation.json` |
 
-`GET /stats` returns the cache hit rate and average latency for cache hits and misses since the API started.
-
-Each message on the `predictions` channel is JSON: `{"data": {...inputs}, "failure_probability": 0.97, "cached": false, "published_at": "2026-09-29T12:00:00+00:00"}`.
+Each message on the `predictions` channel is JSON: `{"data": {...inputs}, "failure_probability": 0.97, "cached": false, "latency_ms": 27.4, "published_at": "2026-09-29T12:00:00+00:00"}`.
 
 ---
 
-## 🧠 Model
+## Model
 
-- **Features:** `cpu_request`, `memory_request`, `priority`, `scheduling_class`.
-- **Label:** a job counts as *failed* if its final event is `FAIL`, `EVICT`, `LOST` or `KILL`, and as *not failed* if it is `FINISH`.
-- **Training:** the random-forest hyperparameters were chosen by grid search, with SMOTE oversampling on the training split.
+- **Data:** 405,894 task events from the Google Borg cluster trace (2019), reduced to 207,762 completed jobs after removing incomplete records, jobs without timestamps, non-terminal events and duplicates.
+- **Features:** `cpu_request`, `memory_request`, `priority`, `scheduling_class`: what a job requests when it is submitted.
+- **Label:** a job counts as *failed* if its final event is `FAIL`, `EVICT`, `LOST` or `KILL`, and as *not failed* if it is `FINISH` (55.9% failed).
+- **Training:** random forest with 200 trees, hyperparameters chosen by grid search (108 combinations, 3-fold cross-validation, F1), with SMOTE oversampling applied to the training split only.
 - **Versions:** the model was pickled with scikit-learn 1.7.1 and NumPy 2.x. Keep the versions pinned in `app/requirements.txt` or the pickle may not load.
 
 ### Evaluation
 
-The 207,762 processed rows contain only about 6,500 distinct feature combinations, so the notebook's random 70/30 split puts identical inputs in both the training and test sets. The score on that split mostly measures inputs the model has already seen. `notebook/evaluate_unseen.py` rebuilds the exact split (it reproduces the notebook's confusion matrix) and scores the saved model separately on test rows whose inputs never appear in training:
+The 207,762 processed rows contain only 6,514 distinct feature combinations, so the notebook's random 70/30 split puts identical inputs in both the training and test sets, and the score on that split mostly measures inputs the model has already seen. `notebook/evaluate_unseen.py` rebuilds the exact split (it reproduces the notebook's confusion matrix) and scores the saved model separately on test rows whose inputs never appear in training:
 
 | Test rows | Rows | Accuracy | F1 | ROC-AUC | Majority-class baseline |
 |---|---|---|---|---|---|

@@ -19,6 +19,7 @@ services:
       dockerfile: dashboard/Dockerfile
     environment:
       API_URL: http://api:8000
+      PUBLIC_API_URL: http://localhost:8000
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8501:8501"

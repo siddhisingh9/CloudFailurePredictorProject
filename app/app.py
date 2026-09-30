@@ -11,6 +11,7 @@ import joblib
 import pandas as pd
 import redis
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = Path(os.getenv("MODEL_PATH", ROOT / "models" / "failure_model.pkl"))
+EVALUATION_PATH = MODEL_PATH.with_name("evaluation.json")
 FEATURES = ["cpu_request", "memory_request", "priority", "scheduling_class"]
 PREDICTIONS_CHANNEL = "predictions"
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", 24 * 60 * 60))
@@ -25,6 +27,8 @@ CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", 24 * 60 * 60))
 model = joblib.load(MODEL_PATH)
 # Part of every cache key, so retraining the model invalidates old cached predictions
 MODEL_VERSION = hashlib.sha256(MODEL_PATH.read_bytes()).hexdigest()[:12]
+# Written by notebook/evaluate_unseen.py; optional so a freshly trained model still serves
+EVALUATION = json.loads(EVALUATION_PATH.read_text()) if EVALUATION_PATH.exists() else None
 
 
 def connect_redis():
@@ -44,6 +48,7 @@ class Stats:
 
     def __init__(self):
         self.lock = threading.Lock()
+        self.started_at = datetime.now(timezone.utc).isoformat()
         self.counts = {"hit": 0, "miss": 0}
         self.total_ms = {"hit": 0.0, "miss": 0.0}
 
@@ -57,6 +62,7 @@ class Stats:
             hits, misses = self.counts["hit"], self.counts["miss"]
             total = hits + misses
             return {
+                "since": self.started_at,
                 "predictions": total,
                 "cache_hits": hits,
                 "cache_misses": misses,
@@ -70,11 +76,22 @@ stats = Stats()
 
 
 class Metrics(BaseModel):
-    # CPU and memory are normalised to the largest machine in the Borg trace
-    cpu_request: float = Field(ge=0)
-    memory_request: float = Field(ge=0)
-    priority: int = Field(ge=0)
-    scheduling_class: int = Field(ge=0, le=3)
+    """Resource request of a single job, as recorded in the Borg trace."""
+
+    cpu_request: float = Field(ge=0, description="CPU requested, normalised to the largest machine (0-1)")
+    memory_request: float = Field(ge=0, description="Memory requested, normalised to the largest machine (0-1)")
+    priority: int = Field(ge=0, description="Job priority (0-450 in the trace)")
+    scheduling_class: int = Field(ge=0, le=3, description="Latency sensitivity, 0 (batch) to 3 (most latency-sensitive)")
+
+    model_config = {"json_schema_extra": {"examples": [
+        {"cpu_request": 0.0072, "memory_request": 0.0013, "priority": 360, "scheduling_class": 2}
+    ]}}
+
+
+class Prediction(BaseModel):
+    failure_probability: float = Field(description="Probability that the job fails, evicts, is lost or is killed")
+    cached: bool = Field(description="True if served from the Redis cache instead of running the model")
+    latency_ms: float = Field(description="Server-side time to produce the prediction")
 
 
 def cache_key(metrics):
@@ -98,11 +115,10 @@ def store_probability(key, prob):
         logger.warning("Redis cache write failed: %s", e)
 
 
-def publish(metrics, prob, cached):
+def publish(metrics, prediction):
     payload = {
         "data": metrics.model_dump(),
-        "failure_probability": prob,
-        "cached": cached,
+        **prediction.model_dump(),
         "published_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
@@ -111,10 +127,23 @@ def publish(metrics, prob, cached):
         logger.warning("Redis publish failed: %s", e)
 
 
-app = FastAPI(title="Cloud Failure Prediction API")
+app = FastAPI(
+    title="Cloud Failure Prediction API",
+    description=(
+        "Predicts whether a job in a compute cluster will fail, from the resources it requests. "
+        "Random forest trained on the Google Borg cluster trace (2019). Predictions are cached "
+        "in Redis and published to the Redis Pub/Sub channel `predictions`."
+    ),
+    version=MODEL_VERSION,
+)
 
 
-@app.get("/health")
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse("/docs")
+
+
+@app.get("/health", summary="Service and dependency status")
 def health():
     if r is None:
         redis_status = "disabled"
@@ -127,12 +156,24 @@ def health():
     return {"status": "ok", "redis": redis_status, "model_version": MODEL_VERSION}
 
 
-@app.get("/stats")
+@app.get("/stats", summary="Cache hit rate and latency since the service started")
 def get_stats():
     return stats.snapshot()
 
 
-@app.post("/predict")
+@app.get("/model", summary="Model details, feature importances and evaluation results")
+def model_info():
+    return {
+        "model_version": MODEL_VERSION,
+        "algorithm": type(model).__name__,
+        "n_estimators": model.n_estimators,
+        "features": FEATURES,
+        "feature_importances": dict(zip(FEATURES, (round(float(v), 4) for v in model.feature_importances_))),
+        "evaluation": EVALUATION,
+    }
+
+
+@app.post("/predict", response_model=Prediction, summary="Predict the failure probability of a job")
 def predict(metrics: Metrics):
     start = time.perf_counter()
     key = cache_key(metrics)
@@ -145,8 +186,10 @@ def predict(metrics: Metrics):
         if r is not None:
             store_probability(key, prob)
 
-    stats.record("hit" if cached else "miss", (time.perf_counter() - start) * 1000)
+    latency_ms = (time.perf_counter() - start) * 1000
+    stats.record("hit" if cached else "miss", latency_ms)
+    prediction = Prediction(failure_probability=prob, cached=cached, latency_ms=round(latency_ms, 2))
     if r is not None:
-        publish(metrics, prob, cached)
+        publish(metrics, prediction)
 
-    return {"failure_probability": prob, "cached": cached}
+    return prediction

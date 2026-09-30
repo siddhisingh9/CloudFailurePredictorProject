@@ -6,7 +6,8 @@ WORKDIR /srv
 COPY dashboard/requirements.txt dashboard/requirements.txt
 RUN pip install --no-cache-dir -r dashboard/requirements.txt
 
-COPY data/processed_gct.csv data/processed_gct.csv
+COPY data/demo_holdout.csv data/demo_holdout.csv
+COPY .streamlit/ .streamlit/
 COPY dashboard/ dashboard/
 
 EXPOSE 8501

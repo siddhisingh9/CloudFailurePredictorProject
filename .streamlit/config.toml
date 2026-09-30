@@ -1,0 +1,27 @@
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FA"
+textColor = "#0F172A"
+borderColor = "#E2E8F0"
+showWidgetBorder = true
+baseRadius = "0.5rem"
+font = "Inter, 'Segoe UI', Helvetica, Arial, sans-serif"
+headingFont = "Inter, 'Segoe UI', Helvetica, Arial, sans-serif"
+headingFontWeights = [650, 600, 600, 600, 600, 600]
+chartCategoricalColors = ["#2563EB", "#DC2626", "#16A34A", "#F59E0B", "#64748B"]
+
+[[theme.fontFaces]]
+family = "Inter"
+url = "https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5/files/inter-latin-wght-normal.woff2"
+weight = "100 900"
+
+[theme.sidebar]
+backgroundColor = "#F8FAFC"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

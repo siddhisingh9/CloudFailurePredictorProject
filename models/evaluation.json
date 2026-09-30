@@ -1,0 +1,69 @@
+{
+  "dataset": {
+    "rows": 207762,
+    "distinct_feature_combinations": 6514,
+    "train_rows": 145433,
+    "test_rows": 62329,
+    "failure_rate": 0.5586
+  },
+  "decision_threshold": 0.5,
+  "subsets": {
+    "all_test_rows": {
+      "rows": 62329,
+      "accuracy": 0.9291,
+      "precision": 0.9613,
+      "recall": 0.9097,
+      "f1": 0.9348,
+      "roc_auc": 0.977,
+      "majority_baseline": 0.5586,
+      "confusion_matrix": [
+        [
+          26239,
+          1274
+        ],
+        [
+          3143,
+          31673
+        ]
+      ]
+    },
+    "seen_inputs": {
+      "rows": 61342,
+      "accuracy": 0.9307,
+      "precision": 0.9629,
+      "recall": 0.9107,
+      "f1": 0.9361,
+      "roc_auc": 0.9778,
+      "majority_baseline": 0.5574,
+      "confusion_matrix": [
+        [
+          25949,
+          1201
+        ],
+        [
+          3052,
+          31140
+        ]
+      ]
+    },
+    "unseen_inputs": {
+      "rows": 987,
+      "accuracy": 0.8338,
+      "precision": 0.8795,
+      "recall": 0.8542,
+      "f1": 0.8667,
+      "roc_auc": 0.9021,
+      "majority_baseline": 0.6322,
+      "confusion_matrix": [
+        [
+          290,
+          73
+        ],
+        [
+          91,
+          533
+        ]
+      ]
+    }
+  }
+}

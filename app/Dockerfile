@@ -6,7 +6,7 @@ WORKDIR /srv
 COPY app/requirements.txt app/requirements.txt
 RUN pip install --no-cache-dir -r app/requirements.txt
 
-COPY models/failure_model.pkl models/failure_model.pkl
+COPY models/failure_model.pkl models/evaluation.json models/
 COPY app/ app/
 
 EXPOSE 8000

@@ -47,8 +47,10 @@ def test_health_without_redis(client):
 def test_predict_returns_probability(client):
     resp = client.post("/predict", json=VALID)
     assert resp.status_code == 200
-    assert 0.0 <= resp.json()["failure_probability"] <= 1.0
-    assert resp.json()["cached"] is False
+    body = resp.json()
+    assert 0.0 <= body["failure_probability"] <= 1.0
+    assert body["cached"] is False
+    assert body["latency_ms"] >= 0
 
 
 @pytest.mark.parametrize("field,value", [
@@ -73,7 +75,8 @@ def test_second_identical_request_is_served_from_cache(fake_redis):
     second = client.post("/predict", json=VALID).json()
 
     assert first["cached"] is False
-    assert second == {"failure_probability": first["failure_probability"], "cached": True}
+    assert second["cached"] is True
+    assert second["failure_probability"] == first["failure_probability"]
     assert client.get("/stats").json()["cache_hits"] == 1
 
 
@@ -88,7 +91,8 @@ def test_cached_value_is_used(fake_redis):
     key = api.cache_key(api.Metrics(**VALID))
     fake_redis.set(key, 0.4242)
     resp = TestClient(api.app).post("/predict", json=VALID).json()
-    assert resp == {"failure_probability": 0.4242, "cached": True}
+    assert resp["failure_probability"] == 0.4242
+    assert resp["cached"] is True
 
 
 def test_predictions_are_published(fake_redis):
@@ -102,7 +106,7 @@ def test_predictions_are_published(fake_redis):
     raw = [pubsub.get_message(timeout=0.1) for _ in range(5)]
     messages = [json.loads(m["data"]) for m in raw if m is not None]
     assert [m["cached"] for m in messages] == [False, True]
-    assert all(m["data"] == VALID and "published_at" in m for m in messages)
+    assert all(m["data"] == VALID and "published_at" in m and "latency_ms" in m for m in messages)
 
 
 def test_predict_survives_redis_outage(monkeypatch):
@@ -122,3 +126,18 @@ def test_stats_reports_hit_rate(fake_redis):
     stats = client.get("/stats").json()
     assert (stats["predictions"], stats["cache_hits"], stats["cache_misses"]) == (4, 3, 1)
     assert stats["hit_rate"] == 0.75
+
+
+def test_root_redirects_to_docs(client):
+    resp = client.get("/", follow_redirects=False)
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"] == "/docs"
+
+
+def test_model_endpoint_reports_importances_and_evaluation(client):
+    body = client.get("/model").json()
+    assert body["model_version"] == api.MODEL_VERSION
+    assert set(body["feature_importances"]) == set(api.FEATURES)
+    assert abs(sum(body["feature_importances"].values()) - 1) < 0.01
+    unseen = body["evaluation"]["subsets"]["unseen_inputs"]
+    assert unseen["rows"] > 0 and 0 < unseen["accuracy"] < 1
